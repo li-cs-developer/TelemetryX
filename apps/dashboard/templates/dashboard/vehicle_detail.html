@@ -1,0 +1,97 @@
+{% extends "dashboard/base.html" %}
+{% block title %}{{ vehicle.license_plate }} · TelemetryX{% endblock %}
+
+{% block content %}
+<div x-data="{ trend: {{ trend_json|safe }} }" x-init="init()">
+  <h1>{{ vehicle.license_plate }}</h1>
+  <p>VIN: {{ vehicle.vin }} · Last 6 hours of raw telemetry + 30-day rollup</p>
+
+  <div class="card">
+    <h3>Speed — last 6 hours (DynamoDB raw)</h3>
+    <canvas id="speed-chart" height="80"></canvas>
+    <p x-show="{{ route_json|length }} === 0" style="color:#64748b">
+      No telemetry yet. Start the simulator: <code>python scripts/simulate_van.py</code>
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>Daily rollup — last 30 days (MySQL)</h3>
+    <canvas id="trend-chart" height="80"></canvas>
+    <p x-show="!trend.length" style="color:#64748b">
+      No rollups yet. Run <code>python manage.py run_aggregation</code> to populate.
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>Raw telemetry (sample)</h3>
+    <table>
+      <thead><tr><th>Time</th><th>Lat</th><th>Lng</th><th>Speed</th></tr></thead>
+      <tbody>
+        {% for p in route_json|slice:":20" %}
+        <tr>
+          <td><code>{{ p.t }}</code></td>
+          <td>{{ p.lat|floatformat:5 }}</td>
+          <td>{{ p.lng|floatformat:5 }}</td>
+          <td>{{ p.speed|floatformat:1 }} mph</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" style="color:#64748b">No data.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p><a href="{% url 'fleet-overview' %}">← Back to fleet</a></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const routePoints = {{ route_json|safe }};
+
+function init() {
+  if (routePoints.length) {
+    new Chart(document.getElementById('speed-chart'), {
+      type: 'line',
+      data: {
+        labels: routePoints.map(p => p.t.slice(11, 19)),
+        datasets: [{
+          label: 'Speed (mph)',
+          data: routePoints.map(p => p.speed),
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59,130,246,0.1)',
+          tension: 0.25, pointRadius: 0, fill: true
+        }]
+      },
+      options: {
+        animation: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true } }
+      }
+    });
+  }
+
+  const trend = {{ trend_json|safe }};
+  if (trend.length) {
+    new Chart(document.getElementById('trend-chart'), {
+      type: 'bar',
+      data: {
+        labels: trend.map(t => t.date),
+        datasets: [
+          { label: 'Avg speed', data: trend.map(t => t.avg_speed), backgroundColor: '#3b82f6' },
+          { label: 'Overspeed events', data: trend.map(t => t.overspeed_count),
+            backgroundColor: '#ef4444', yAxisID: 'y2' }
+        ]
+      },
+      options: {
+        animation: false,
+        scales: {
+          y: { beginAtZero: true, title: { display: true, text: 'mph' } },
+          y2: { position: 'right', beginAtZero: true, grid: { drawOnChartArea: false } }
+        }
+      }
+    });
+  }
+}
+</script>
+{% endblock %}

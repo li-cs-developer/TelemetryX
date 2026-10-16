@@ -1,0 +1,50 @@
+# ---------- build stage ----------
+FROM python:3.12-slim AS builder
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update && apt-get install -y \
+    default-libmysqlclient-dev build-essential pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /wheels
+COPY requirements.txt requirements.prod.txt ./
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.prod.txt
+
+
+# ---------- runtime stage ----------
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DJANGO_SETTINGS_MODULE=telemetryx.settings
+
+RUN apt-get update && apt-get install -y \
+    default-mysql-client curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --shell /bin/bash app
+
+WORKDIR /app
+
+COPY --from=builder /wheels /wheels
+COPY requirements.txt requirements.prod.txt ./
+RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.prod.txt \
+    && rm -rf /wheels
+
+COPY --chown=app:app . .
+
+RUN python manage.py collectstatic --noinput || true
+
+USER app
+
+EXPOSE 8000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8000/healthz/ || exit 1
+
+CMD ["gunicorn", "telemetryx.asgi:application", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--workers", "3", \
+     "--timeout", "60"]

@@ -1,0 +1,136 @@
+﻿services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: telemetryx
+      MYSQL_USER: telemetryx
+      MYSQL_PASSWORD: telemetryx
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_local:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  dynamodb:
+    image: amazon/dynamodb-local
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /tmp"
+    ports:
+      - "18000:8000"
+    healthcheck:
+      test: [ "CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8000' || exit 1" ]
+      interval: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py init_dynamo &&
+             python manage.py init_plans &&
+             daphne -b 0.0.0.0 -p 8001 telemetryx.asgi:application"
+    volumes:
+      - .:/app
+    ports:
+      - "8001:8001"
+    environment:
+      DJANGO_SETTINGS_MODULE: "telemetryx.settings"
+      DEBUG: "1"
+      SECRET_KEY: "local-dev-only-not-secret"
+      ALLOWED_HOSTS: "localhost,127.0.0.1"
+      DATABASE_URL: "mysql://telemetryx:telemetryx@mysql:3306/telemetryx"
+
+      # The key difference from prod: point at the local container
+      AWS_ACCESS_KEY_ID: "fakeMyKeyId"
+      AWS_SECRET_ACCESS_KEY: "fakeSecretAccessKey"
+      AWS_REGION: "us-east-1"
+      DYNAMODB_ENDPOINT: "http://dynamodb:8000"
+      DYNAMODB_TABLE: "TelemetryXTelemetry"
+
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      CHANNEL_LAYERS_REDIS: "redis://redis:6379/2"
+
+      BATCH_INGESTION_ENABLED: "0"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      dynamodb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A telemetryx.celery:app worker -l info
+    volumes:
+      - .:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: "telemetryx.settings"
+      DEBUG: "1"
+      SECRET_KEY: "local-dev-only-not-secret"
+      DATABASE_URL: "mysql://telemetryx:telemetryx@mysql:3306/telemetryx"
+      AWS_ACCESS_KEY_ID: "fakeMyKeyId"
+      AWS_SECRET_ACCESS_KEY: "fakeSecretAccessKey"
+      AWS_REGION: "us-east-1"
+      DYNAMODB_ENDPOINT: "http://dynamodb:8000"
+      DYNAMODB_TABLE: "TelemetryXTelemetry"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      CHANNEL_LAYERS_REDIS: "redis://redis:6379/2"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      dynamodb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A telemetryx.celery:app beat -l info -s /tmp/celerybeat-schedule
+    volumes:
+      - .:/app
+    environment:
+      DJANGO_SETTINGS_MODULE: "telemetryx.settings"
+      DEBUG: "1"
+      SECRET_KEY: "local-dev-only-not-secret"
+      DATABASE_URL: "mysql://telemetryx:telemetryx@mysql:3306/telemetryx"
+      AWS_ACCESS_KEY_ID: "fakeMyKeyId"
+      AWS_SECRET_ACCESS_KEY: "fakeSecretAccessKey"
+      AWS_REGION: "us-east-1"
+      DYNAMODB_ENDPOINT: "http://dynamodb:8000"
+      DYNAMODB_TABLE: "TelemetryXTelemetry"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      CHANNEL_LAYERS_REDIS: "redis://redis:6379/2"
+    depends_on:
+      redis:
+        condition: service_started
+      dynamodb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  mysql_local:
+  dynamo_local:

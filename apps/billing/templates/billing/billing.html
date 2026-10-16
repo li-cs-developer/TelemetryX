@@ -1,0 +1,63 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Billing · TelemetryX{% endblock %}
+
+{% block content %}
+<h1>Billing</h1>
+
+<div class="card">
+  <h3>Current plan</h3>
+  <p>
+    <b>{{ subscription.plan.name }}</b>
+    <span class="pill
+      {% if subscription.status == 'active' %}ok
+      {% elif subscription.status == 'trialing' %}warn
+      {% else %}danger{% endif %}">
+      {{ subscription.status }}
+    </span>
+  </p>
+  <p>Vehicles: {{ vehicle_count }} / {{ subscription.plan.max_vehicles }}</p>
+  <p>Ingestion cap: {{ subscription.plan.max_pings_per_second }} pings/sec per VIN-class</p>
+  <p style="color:#64748b;font-size:13px">
+    This is a demo billing stub — no real payment provider is connected.
+  </p>
+</div>
+
+<div class="card">
+  <h3>Plans</h3>
+  <table>
+    <thead>
+      <tr>
+        <th align="left">Plan</th>
+        <th align="left">Max vans</th>
+        <th align="left">Pings/sec</th>
+        <th align="left">Price</th>
+        <th align="left"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in plans %}
+      <tr>
+        <td>{{ p.name }}</td>
+        <td>{{ p.max_vehicles }}</td>
+        <td>{{ p.max_pings_per_second }}</td>
+        <td>${{ p.monthly_price_cents|floatformat:0|slice:":-2" }}.{{ p.monthly_price_cents|floatformat:0|slice:"-2:" }}/mo</td>
+        <td>
+          {% if can_change_plan and p.id != subscription.plan.id %}
+          <form method="post" action="{% url 'billing-change-plan' %}" style="display:inline">
+            {% csrf_token %}
+            <input type="hidden" name="plan_code" value="{{ p.code }}">
+            <button type="submit">Switch</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not can_change_plan %}
+    <p style="color:#64748b;font-size:13px">
+      Only managers and owners can change plans.
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

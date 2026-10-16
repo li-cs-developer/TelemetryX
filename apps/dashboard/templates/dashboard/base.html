@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{% block title %}TelemetryX{% endblock %}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f8fafc; color: #0f172a; }
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar { width: 220px; background: #0f172a; color: #cbd5e1; padding: 16px; }
+    .sidebar h2 { color: #fff; margin: 0 0 16px; }
+    .sidebar a { color: #cbd5e1; display: block; padding: 8px 0; text-decoration: none; }
+    .sidebar a:hover { color: #fff; }
+    .main { flex: 1; padding: 24px; }
+    .card { background: #fff; border-radius: 8px; padding: 16px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.08); margin-bottom: 16px; }
+    .pill { padding: 2px 8px; border-radius: 999px; font-size: 12px; display: inline-block; }
+    .pill.ok { background: #dcfce7; color: #166534; }
+    .pill.warn { background: #fef3c7; color: #92400e; }
+    .pill.danger { background: #fee2e2; color: #991b1b; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 8px 4px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+    button { padding: 6px 12px; border-radius: 6px; border: 1px solid #cbd5e1;
+             background: #fff; cursor: pointer; }
+    button:hover { background: #f1f5f9; }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <h2>TelemetryX</h2>
+      <a href="{% url 'fleet-overview' %}">Fleet Overview</a>
+      <a href="{% url 'geofence-manager' %}">Geofences</a>
+      <a href="{% url 'billing-home' %}">Billing</a>
+      <a href="/admin/">Admin</a>
+      <form method="post" action="/admin/logout/" style="margin:0">
+  {% csrf_token %}
+  <button type="submit"
+          style="background:none;border:0;color:#cbd5e1;padding:8px 0;
+                 cursor:pointer;font:inherit;text-align:left;width:100%">
+    Logout
+  </button>
+</form>
+    </aside>
+    <main class="main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,109 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Geofences · TelemetryX{% endblock %}
+
+{% block content %}
+<div x-data="geofenceManager()" x-init="init()">
+  <h1>Geofences</h1>
+  <p style="color:#64748b">
+    Restricted zones alert on entry. Approved zones alert on exit.
+  </p>
+
+  <div class="card">
+    <h3>Existing zones</h3>
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Center</th><th>Radius</th><th>Type</th><th>Active</th></tr>
+      </thead>
+      <tbody>
+        <template x-for="g in geofences" :key="g.id">
+          <tr>
+            <td x-text="g.name"></td>
+            <td x-text="g.center_lat.toFixed(4) + ', ' + g.center_lng.toFixed(4)"></td>
+            <td x-text="g.radius_meters.toFixed(0) + ' m'"></td>
+            <td x-text="g.is_restricted ? 'Restricted' : 'Approved'"></td>
+            <td x-text="g.is_active ? 'yes' : 'no'"></td>
+          </tr>
+        </template>
+        <template x-if="geofences.length === 0">
+          <tr><td colspan="5" style="color:#64748b">No geofences yet.</td></tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Add a zone</h3>
+    <form @submit.prevent="create">
+      <p><input x-model="form.name" placeholder="Name" required></p>
+      <p>
+        <input x-model.number="form.center_lat" placeholder="Center lat" step="0.0001" required>
+        <input x-model.number="form.center_lng" placeholder="Center lng" step="0.0001" required>
+      </p>
+      <p>
+        <input x-model.number="form.radius_meters" placeholder="Radius (m)" required>
+        <label><input type="checkbox" x-model="form.is_restricted"> Restricted (alert on entry)</label>
+      </p>
+      <p><button type="submit">Create</button></p>
+      <p x-show="error" style="color:#991b1b" x-text="error"></p>
+      <p x-show="success" style="color:#166534" x-text="success"></p>
+    </form>
+  </div>
+</div>
+
+<script id="geofences-data" type="application/json">{{ geofences_json|safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function geofenceManager() {
+  return {
+    geofences: [],
+    form: {
+      name: "",
+      center_lat: 37.7749,
+      center_lng: -122.4194,
+      radius_meters: 1000,
+      is_restricted: true,
+    },
+    error: "",
+    success: "",
+
+    init() {
+      const el = document.getElementById("geofences-data");
+      if (!el) return;
+      try {
+        this.geofences = JSON.parse(el.textContent);
+      } catch (e) {
+        console.error("Failed to parse geofences JSON:", e, el.textContent);
+        this.geofences = [];
+      }
+    },
+
+    getCookie(name) {
+      const v = document.cookie.match("(^|;)\\s*" + name + "\\s*=\\s*([^;]+)");
+      return v ? v.pop() : "";
+    },
+
+    async create() {
+      this.error = "";
+      this.success = "";
+      const r = await fetch("/api/v1/geofences/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": this.getCookie("csrftoken"),
+        },
+        body: JSON.stringify(this.form),
+      });
+      if (!r.ok) {
+        this.error = `Error ${r.status}: ${await r.text()}`;
+        return;
+      }
+      const gf = await r.json();
+      this.geofences.push(gf);
+      this.success = `Created '${gf.name}'.`;
+    },
+  };
+}
+</script>
+{% endblock %}

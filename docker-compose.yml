@@ -1,0 +1,73 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: telemetryx
+      MYSQL_USER: telemetryx
+      MYSQL_PASSWORD: telemetryx
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  dynamodb:
+    image: amazon/dynamodb-local
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /data"
+    ports:
+      - "8001:8000"
+    volumes:
+      - dynamo_data:/data
+
+  web:
+    build: .
+    command: daphne -b 0.0.0.0 -p 8000 telemetryx.asgi:application
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      dynamodb:
+        condition: service_started
+    env_file:
+      - .env
+
+  worker:
+    build: .
+    command: celery -A telemetryx worker -l info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - mysql
+    env_file:
+      - .env
+
+  beat:
+    build: .
+    command: celery -A telemetryx beat -l info
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+    env_file:
+      - .env
+
+volumes:
+  mysql_data:
+  dynamo_data:

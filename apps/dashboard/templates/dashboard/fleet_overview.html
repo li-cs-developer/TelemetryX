@@ -1,0 +1,154 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Fleet Overview · TelemetryX{% endblock %}
+
+{% block content %}
+<div x-data="fleetOverview()" x-init="init()">
+
+  <h1>Fleet Overview</h1>
+  <p>
+    Live positions ·
+    <span x-text="vehicles.length"></span> vans tracked ·
+    WS: <span class="pill" :class="wsOpen ? 'ok' : 'danger'"
+             x-text="wsOpen ? 'connected' : 'disconnected'"></span>
+  </p>
+
+  <div class="card">
+    <h3>Live positions</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>Plate</th>
+          <th>VIN</th>
+          <th>Speed</th>
+          <th>Latitude</th>
+          <th>Longitude</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="v in vehicles" :key="v.vin">
+          <tr>
+            <td><a :href="`/dashboard/vehicles/${v.vin}/`" x-text="v.plate"></a></td>
+            <td x-text="v.vin"></td>
+            <td x-text="v.speed.toFixed(1) + ' mph'"></td>
+            <td x-text="v.lat != null ? v.lat.toFixed(5) : '—'"></td>
+            <td x-text="v.lng != null ? v.lng.toFixed(5) : '—'"></td>
+            <td>
+              <span class="pill"
+                    :class="v.speed > 80 ? 'danger' : v.speed > 65 ? 'warn' : 'ok'"
+                    x-text="v.speed > 80 ? 'Overspeed' : v.speed > 65 ? 'Fast' : 'Normal'">
+              </span>
+            </td>
+          </tr>
+        </template>
+        <template x-if="vehicles.length === 0">
+          <tr><td colspan="6" style="color:#64748b">No active vehicles.</td></tr>
+        </template>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Recent pings (live feed)</h3>
+    <p style="color:#64748b;font-size:13px">
+      Latest WebSocket message per vehicle. Updates every few seconds while the simulator runs.
+    </p>
+    <template x-if="feed.length === 0">
+      <p style="color:#64748b">No pings received yet.</p>
+    </template>
+    <template x-for="(p, i) in feed" :key="i">
+      <div style="padding:4px 0;border-bottom:1px solid #e2e8f0;font-family:monospace;font-size:13px">
+        <span x-text="p.time"></span>
+        &nbsp;·&nbsp;
+        <b x-text="p.plate"></b>
+        &nbsp;·&nbsp;
+        <span x-text="p.speed.toFixed(1) + ' mph'"></span>
+        &nbsp;·&nbsp;
+        <span x-text="p.lat.toFixed(5) + ', ' + p.lng.toFixed(5)"></span>
+      </div>
+    </template>
+  </div>
+</div>
+
+<script id="vehicles-data" type="application/json">{{ vehicles_json|safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fleetOverview() {
+  return {
+    vehicles: [],
+    feed: [],
+    ws: null,
+    wsOpen: false,
+    reconnectTimer: null,
+
+    init() {
+      const el = document.getElementById("vehicles-data");
+      if (el) {
+        try {
+          this.vehicles = JSON.parse(el.textContent);
+        } catch (e) {
+          console.error("Bad vehicles JSON", e);
+          this.vehicles = [];
+        }
+      }
+      this.connectWs();
+    },
+
+    connectWs() {
+      if (this.ws && (this.ws.readyState === WebSocket.OPEN ||
+                      this.ws.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
+      const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const url = `${scheme}://${window.location.host}/ws/fleet/live/`;
+
+      try {
+        this.ws = new WebSocket(url);
+      } catch (e) {
+        this.wsOpen = false;
+        this.scheduleReconnect();
+        return;
+      }
+
+      this.ws.onopen = () => { this.wsOpen = true; };
+      this.ws.onclose = () => { this.wsOpen = false; this.scheduleReconnect(); };
+      this.ws.onerror = () => { this.wsOpen = false; };
+      this.ws.onmessage = (e) => {
+        try {
+          const ping = JSON.parse(e.data);
+          this.applyPing(ping);
+        } catch (err) {
+          console.warn('Bad WS payload', e.data);
+        }
+      };
+    },
+
+    scheduleReconnect() {
+      if (this.reconnectTimer) return;
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        this.connectWs();
+      }, 3000);
+    },
+
+    applyPing(ping) {
+      const idx = this.vehicles.findIndex(v => v.vin === ping.vin);
+      if (idx === -1) {
+        this.vehicles.push({ ...ping });
+      } else {
+        this.vehicles[idx] = { ...this.vehicles[idx], ...ping };
+      }
+
+      // Prepend to the live feed, keep only last 20
+      const now = new Date();
+      const time = now.toTimeString().slice(0, 8);
+      this.feed.unshift({ ...ping, time });
+      if (this.feed.length > 20) this.feed.length = 20;
+    }
+  };
+}
+</script>
+{% endblock %}
